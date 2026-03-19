@@ -1,0 +1,595 @@
+{
+  "name": "Daily Job Agent - Australia",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 7,
+              "triggerAtMinute": 30,
+              "triggerAtDay": "weekday"
+            }
+          ]
+        }
+      },
+      "id": "node-01-schedule",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 300],
+      "notes": "Stage 1: 每个工作日 AEST 07:30 触发"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ JSON.stringify({\n  GOOGLE_DRIVE_FILE_ID: '1aBcDeFgHiJkLmNoPqRsTuVwXyZ',\n  LINKEDIN_SEARCH_KEYWORDS: 'Software Engineer,Backend Developer,Full Stack Developer',\n  LINKEDIN_LOCATION: 'Australia',\n  RECIPIENT_EMAIL: 'your.email@gmail.com',\n  TOP_N_JOBS: 15,\n  AI_BATCH_SIZE: 5,\n  MIN_OVERALL_SCORE: 0,\n  EXCLUDE_KEYWORDS: 'intern,junior,graduate',\n  APIFY_DATASET_WAIT_SECS: 60,\n  RUN_DATE: new Date().toISOString().split('T')[0],\n  TIMEZONE: 'Australia/Sydney'\n}) }}",
+        "options": {}
+      },
+      "id": "node-02-config",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [220, 300],
+      "notes": "Stage 1: 注入所有运行时配置变量"
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $json.GOOGLE_DRIVE_FILE_ID }}"
+        },
+        "options": {}
+      },
+      "id": "node-03-retrieve-cv",
+      "name": "RetrieveCV",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [440, 300],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "google-drive-credential-id",
+          "name": "Google Drive OAuth2"
+        }
+      },
+      "notes": "Stage 2: 从 Google Drive 下载 PDF 简历",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "text",
+        "options": {}
+      },
+      "id": "node-04-extract-pdf",
+      "name": "Extract from File",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [660, 300],
+      "notes": "Stage 2: PDF → 纯文本提取"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Stage 2: 格式化简历文本，提取关键字段\n// 输入: Extract from File 的纯文本输出\n// 输出: 结构化的简历摘要对象\n\nconst items = $input.all();\nconst config = $('Config').first().json;\n\ntry {\n  // 获取提取的文本\n  let cvText = '';\n  for (const item of items) {\n    if (item.json.data) {\n      cvText += item.json.data;\n    } else if (item.json.text) {\n      cvText += item.json.text;\n    }\n  }\n  \n  if (!cvText || cvText.trim().length < 50) {\n    throw new Error('CV 文本提取失败或内容过短');\n  }\n  \n  // 清理文本：移除多余空白和特殊字符\n  cvText = cvText\n    .replace(/\\r\\n/g, '\\n')\n    .replace(/\\n{3,}/g, '\\n\\n')\n    .replace(/\\s{2,}/g, ' ')\n    .trim();\n  \n  // 截断过长的简历（Claude 上下文限制）\n  const MAX_CV_LENGTH = 8000;\n  if (cvText.length > MAX_CV_LENGTH) {\n    cvText = cvText.substring(0, MAX_CV_LENGTH) + '\\n[... truncated for processing ...]';\n  }\n  \n  return [{\n    json: {\n      cv_text: cvText,\n      cv_length: cvText.length,\n      extraction_timestamp: new Date().toISOString(),\n      config: config\n    }\n  }];\n  \n} catch (error) {\n  return [{\n    json: {\n      cv_text: '',\n      cv_length: 0,\n      error: error.message,\n      extraction_timestamp: new Date().toISOString(),\n      config: config\n    }\n  }];\n}\n"
+      },
+      "id": "node-05-map-resume",
+      "name": "MapResume",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, 300],
+      "notes": "Stage 2: 格式化简历文本，提取关键字段"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.apify.com/v2/acts/bebity~linkedin-jobs-scraper/runs?waitForFinish=120",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"searchQueries\": {{ JSON.stringify($json.config.LINKEDIN_SEARCH_KEYWORDS.split(',').map(k => k.trim())) }},\n  \"location\": {{ JSON.stringify($json.config.LINKEDIN_LOCATION) }},\n  \"datePosted\": \"past-24h\",\n  \"rows\": 100,\n  \"proxy\": {\n    \"useApifyProxy\": true,\n    \"apifyProxyGroups\": [\"RESIDENTIAL\"]\n  },\n  \"scrapeJobDetails\": true,\n  \"maxConcurrency\": 5\n}",
+        "options": {
+          "timeout": 180000,
+          "retry": {
+            "maxRetries": 3,
+            "retryInterval": 5000
+          }
+        }
+      },
+      "id": "node-06-linkedin",
+      "name": "LinkedIn",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1100, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "apify-api-credential-id",
+          "name": "Apify API Token"
+        }
+      },
+      "notes": "Stage 3: 调用 Apify LinkedIn Jobs Scraper API",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'https://api.apify.com/v2/datasets/' + $json.data?.defaultDatasetId + '/items?format=json&limit=100' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "node-06b-fetch-dataset",
+      "name": "Fetch Dataset",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1320, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "apify-api-credential-id",
+          "name": "Apify API Token"
+        }
+      },
+      "notes": "Stage 3: 获取 Apify 运行结果数据集"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Stage 3: 标准化 LinkedIn 职位数据\n// 输入: Apify scraper 返回的原始数据\n// 输出: 统一格式的职位对象数组\n\nconst rawItems = $input.all();\nconst config = $('Config').first().json;\n\ntry {\n  // Apify 可能以数组或单个对象返回\n  let rawJobs = [];\n  for (const item of rawItems) {\n    if (Array.isArray(item.json)) {\n      rawJobs = rawJobs.concat(item.json);\n    } else if (item.json && item.json.title) {\n      rawJobs.push(item.json);\n    }\n  }\n  \n  if (rawJobs.length === 0) {\n    // 无职位时返回空标记\n    return [{ json: { _no_jobs: true, config: config } }];\n  }\n  \n  // 标准化每个职位的字段\n  const normalizedJobs = rawJobs.map((job, index) => {\n    // 提取 jobId（兼容不同 Apify 输出格式）\n    const jobId = job.id || job.jobId || job.entityUrn?.split(':').pop() || `gen-${Date.now()}-${index}`;\n    \n    // 提取薪资信息（可能在不同字段中）\n    const salary = job.salary || job.salaryInfo || job.companyApplyUrl || '';\n    const salaryRange = typeof salary === 'object' \n      ? `${salary.min || ''} - ${salary.max || ''} ${salary.currency || 'AUD'}`\n      : (salary || 'Not specified');\n    \n    return {\n      job_id: String(jobId),\n      title: (job.title || job.jobTitle || 'Unknown Title').trim(),\n      company: (job.companyName || job.company || 'Unknown Company').trim(),\n      location: (job.location || job.formattedLocation || 'Australia').trim(),\n      posted_date: job.postedAt || job.listedAt || job.publishedAt || new Date().toISOString(),\n      salary_range: salaryRange,\n      linkedin_url: job.jobUrl || job.url || job.link || `https://www.linkedin.com/jobs/view/${jobId}`,\n      description: (job.description || job.descriptionText || job.jobDescription || '').trim(),\n      description_snippet: (job.description || job.descriptionText || '').substring(0, 300).trim(),\n      seniority_level: job.seniorityLevel || job.experienceLevel || '',\n      employment_type: job.employmentType || job.contractType || '',\n      industry: job.industry || job.industries?.join(', ') || '',\n      applicants_count: job.applicantsCount || job.numberOfApplicants || 0\n    };\n  });\n  \n  return normalizedJobs.map(job => ({ json: { ...job, config: config } }));\n  \n} catch (error) {\n  return [{ json: { _error: error.message, _no_jobs: true, config: config } }];\n}\n"
+      },
+      "id": "node-07-normalize",
+      "name": "NormalizeData",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1540, 300],
+      "notes": "Stage 3: 统一字段名，处理缺失值"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Stage 3: 关键词过滤 + jobId 去重\n// 输入: 标准化后的职位数据\n// 输出: 过滤和去重后的职位列表\n\nconst items = $input.all();\nconst config = $('Config').first().json;\n\ntry {\n  // 检查是否无职位\n  if (items.length === 1 && items[0].json._no_jobs) {\n    return items;\n  }\n  \n  // 解析排除关键词\n  const excludeKeywords = (config.EXCLUDE_KEYWORDS || '')\n    .split(',')\n    .map(k => k.trim().toLowerCase())\n    .filter(k => k.length > 0);\n  \n  // 去重 Map（基于 job_id）\n  const seenIds = new Set();\n  const filteredJobs = [];\n  \n  for (const item of items) {\n    const job = item.json;\n    \n    // 跳过无效数据\n    if (!job.job_id || !job.title) continue;\n    \n    // job_id 去重\n    if (seenIds.has(job.job_id)) continue;\n    seenIds.add(job.job_id);\n    \n    // 排除关键词过滤（检查标题和描述）\n    const titleLower = (job.title || '').toLowerCase();\n    const descLower = (job.description || '').toLowerCase();\n    const shouldExclude = excludeKeywords.some(kw => \n      titleLower.includes(kw) || descLower.startsWith(kw)\n    );\n    \n    if (shouldExclude) continue;\n    \n    // 检查描述是否为空（无法评分）\n    if (!job.description || job.description.length < 50) continue;\n    \n    filteredJobs.push({ json: job });\n  }\n  \n  if (filteredJobs.length === 0) {\n    return [{ json: { _no_jobs: true, config: config } }];\n  }\n  \n  return filteredJobs;\n  \n} catch (error) {\n  return [{ json: { _error: error.message, _no_jobs: true, config: config } }];\n}\n"
+      },
+      "id": "node-08-filter-dedup",
+      "name": "Filter and Deduplicate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1760, 300],
+      "notes": "Stage 3: 关键词过滤 + jobId 去重"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Stage 3.5: 检查是否有职位需要处理\n// 如果无职位，分流到\"无职位通知\"分支\n\nconst items = $input.all();\n\nif (items.length === 1 && items[0].json._no_jobs) {\n  // 设置标记，后续 IF 节点会路由到空通知邮件\n  return [{ json: { _no_jobs: true, config: items[0].json.config } }];\n}\n\n// 有职位，继续正常流程\nreturn items;\n"
+      },
+      "id": "node-08b-check-empty",
+      "name": "Check Empty",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1980, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition-no-jobs",
+              "leftValue": "={{ $json._no_jobs }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "notTrue"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "node-08c-if-has-jobs",
+      "name": "IF Has Jobs",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2200, 300],
+      "notes": "分流: 有职位 → 继续评分; 无职位 → 发送空通知"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Stage 4: 合并 CV 文本 + Job Description，构造批次 prompt\n// 输入: 过滤后的职位列表 + MapResume 的 CV 文本\n// 输出: 按批次分组的 AI 输入\n\nconst jobs = $input.all();\nconst cvData = $('MapResume').first().json;\nconst config = $('Config').first().json;\nconst cvText = cvData.cv_text;\nconst batchSize = config.AI_BATCH_SIZE || 5;\n\nif (!cvText || cvText.length < 50) {\n  throw new Error('CV 文本无效，无法进行 AI 评分');\n}\n\n// 将职位按批次分组\nconst batches = [];\nfor (let i = 0; i < jobs.length; i += batchSize) {\n  const batchJobs = jobs.slice(i, i + batchSize).map(item => ({\n    job_id: item.json.job_id,\n    title: item.json.title,\n    company: item.json.company,\n    location: item.json.location,\n    description: item.json.description,\n    seniority_level: item.json.seniority_level,\n    employment_type: item.json.employment_type\n  }));\n  \n  batches.push({\n    json: {\n      batch_index: Math.floor(i / batchSize),\n      batch_size: batchJobs.length,\n      total_jobs: jobs.length,\n      cv_text: cvText,\n      jobs: batchJobs,\n      // 保留原始职位元数据（用于后续合并）\n      jobs_meta: jobs.slice(i, i + batchSize).map(item => item.json)\n    }\n  });\n}\n\nreturn batches;\n"
+      },
+      "id": "node-09-prepare-ai",
+      "name": "Prepare AI Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2420, 200],
+      "notes": "Stage 4: 合并 CV + JD，构造批次 prompt"
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {
+          "reset": false
+        }
+      },
+      "id": "node-09b-split-batches",
+      "name": "SplitInBatches",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [2640, 200],
+      "notes": "逐批发送到 AI 评分（控制速率）"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $credentials.httpHeaderAuth.value }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 4096,\n  \"temperature\": 0.1,\n  \"system\": \"You are an expert career coach and technical recruiter specializing in the Australian job market. Your task is to evaluate how well a candidate's CV matches a specific job posting.\\n\\nEVALUATION DIMENSIONS (score each 0-100):\\n1. technical_skills_match (weight 35%): Compare required tech stack, tools, certifications against candidate's demonstrated skills\\n2. experience_level_match (weight 25%): Compare years of experience, seniority level, and role complexity against requirements\\n3. language_requirements (weight 15%): English proficiency, any additional language requirements for the Australian market\\n4. industry_domain_fit (weight 15%): Relevance of candidate's industry background to the target role's domain\\n5. location_visa_compatibility (weight 10%): Australian work rights, location proximity, remote/hybrid compatibility\\n\\nCRITICAL RULES:\\n- Score 0 for any hard requirement the candidate clearly cannot meet (e.g., requires 10yr experience, candidate has 2yr)\\n- Score 85-100 only when the candidate demonstrably exceeds requirements\\n- Do NOT infer skills not mentioned in the CV\\n- Flag any visa/work rights issues as red_flags immediately\\n- Output ONLY valid JSON matching the provided schema. No preamble, no markdown.\\n\\nFor each job, output a JSON object following this exact schema:\\n{\\n  \\\"job_id\\\": \\\"string\\\",\\n  \\\"scores\\\": {\\n    \\\"technical_skills_match\\\": { \\\"score\\\": integer(0-100), \\\"weight\\\": 0.35, \\\"rationale\\\": \\\"string ≤50 words\\\" },\\n    \\\"experience_level_match\\\": { \\\"score\\\": integer(0-100), \\\"weight\\\": 0.25, \\\"rationale\\\": \\\"string ≤50 words\\\" },\\n    \\\"language_requirements\\\": { \\\"score\\\": integer(0-100), \\\"weight\\\": 0.15, \\\"rationale\\\": \\\"string ≤50 words\\\" },\\n    \\\"industry_domain_fit\\\": { \\\"score\\\": integer(0-100), \\\"weight\\\": 0.15, \\\"rationale\\\": \\\"string ≤50 words\\\" },\\n    \\\"location_visa_compatibility\\\": { \\\"score\\\": integer(0-100), \\\"weight\\\": 0.10, \\\"rationale\\\": \\\"string ≤50 words\\\" }\\n  },\\n  \\\"overall_score\\\": float(weighted average, 1 decimal),\\n  \\\"match_highlights\\\": [\\\"string x3\\\"],\\n  \\\"red_flags\\\": [\\\"string or empty array\\\"],\\n  \\\"recommended_action\\\": \\\"apply_now | worth_applying | low_priority\\\"\\n}\\n\\nWhen given multiple jobs, output a JSON array of these objects.\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": {{ JSON.stringify('CANDIDATE CV:\\n' + $json.cv_text + '\\n\\n---\\n\\nJOBS TO EVALUATE:\\n' + $json.jobs.map((j, i) => `\\nJOB ${i+1}:\\nJob ID: ${j.job_id}\\nTitle: ${j.title}\\nCompany: ${j.company}\\nLocation: ${j.location}\\nSeniority: ${j.seniority_level}\\nType: ${j.employment_type}\\nDescription:\\n${j.description}\\n---`).join('\\n') + '\\n\\nEvaluate ALL ' + $json.jobs.length + ' jobs above. Return a JSON array with one scoring object per job. Output ONLY the JSON array, no other text.') }}\n    }\n  ]\n}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "node-10-score-ai",
+      "name": "Score the Job",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2860, 200],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "claude-api-credential-id",
+          "name": "Claude API Key"
+        }
+      },
+      "notes": "Stage 5: 调用 Claude API 进行 AI 评分",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Stage 5-6: 解析 AI 输出 JSON，验证 Schema，合并元数据\n// 输入: Claude API 响应 + 原始职位元数据\n// 输出: 完整的评分+元数据对象\n\nconst items = $input.all();\nconst allResults = [];\n\n// 权重定义（固定不可更改）\nconst WEIGHTS = {\n  technical_skills_match: 0.35,\n  experience_level_match: 0.25,\n  language_requirements: 0.15,\n  industry_domain_fit: 0.15,\n  location_visa_compatibility: 0.10\n};\n\n// JSON Schema 验证函数\nfunction validateScoreObject(obj) {\n  const errors = [];\n  \n  if (!obj.job_id) errors.push('Missing job_id');\n  if (!obj.scores) errors.push('Missing scores object');\n  \n  if (obj.scores) {\n    for (const dim of Object.keys(WEIGHTS)) {\n      if (!obj.scores[dim]) {\n        errors.push(`Missing dimension: ${dim}`);\n      } else {\n        const s = obj.scores[dim].score;\n        if (typeof s !== 'number' || s < 0 || s > 100) {\n          errors.push(`Invalid score for ${dim}: ${s}`);\n        }\n      }\n    }\n  }\n  \n  if (!Array.isArray(obj.match_highlights)) errors.push('match_highlights must be array');\n  if (!Array.isArray(obj.red_flags)) errors.push('red_flags must be array');\n  \n  const validActions = ['apply_now', 'worth_applying', 'low_priority'];\n  if (!validActions.includes(obj.recommended_action)) {\n    errors.push(`Invalid recommended_action: ${obj.recommended_action}`);\n  }\n  \n  return errors;\n}\n\n// 显式计算加权总分\nfunction calculateOverallScore(scores) {\n  let total = 0;\n  for (const [dim, weight] of Object.entries(WEIGHTS)) {\n    const score = scores[dim]?.score || 0;\n    total += score * weight;\n  }\n  return Math.round(total * 10) / 10; // 保留1位小数\n}\n\nfor (const item of items) {\n  try {\n    const response = item.json;\n    \n    // 从 Claude 响应中提取文本内容\n    let aiText = '';\n    if (response.content && Array.isArray(response.content)) {\n      aiText = response.content.map(c => c.text || '').join('');\n    } else if (typeof response === 'string') {\n      aiText = response;\n    } else if (response.error) {\n      console.log('AI API 错误:', response.error);\n      continue;\n    }\n    \n    // 清理 AI 输出（移除可能的 markdown 包裹）\n    aiText = aiText.trim();\n    if (aiText.startsWith('```json')) {\n      aiText = aiText.replace(/^```json\\s*/, '').replace(/\\s*```$/, '');\n    } else if (aiText.startsWith('```')) {\n      aiText = aiText.replace(/^```\\s*/, '').replace(/\\s*```$/, '');\n    }\n    \n    // 解析 JSON\n    let scoreData;\n    try {\n      scoreData = JSON.parse(aiText);\n    } catch (parseErr) {\n      // 尝试修复常见 JSON 错误\n      aiText = aiText.replace(/,\\s*}/g, '}').replace(/,\\s*]/g, ']');\n      try {\n        scoreData = JSON.parse(aiText);\n      } catch (e) {\n        console.log('JSON 解析失败，跳过此批次:', parseErr.message);\n        continue;\n      }\n    }\n    \n    // 确保是数组格式\n    const scoreArray = Array.isArray(scoreData) ? scoreData : [scoreData];\n    \n    // 获取对应批次的元数据\n    const batchMeta = $('Prepare AI Input').all();\n    \n    for (const score of scoreArray) {\n      // 验证 Schema\n      const validationErrors = validateScoreObject(score);\n      if (validationErrors.length > 0) {\n        console.log(`职位 ${score.job_id} 验证失败:`, validationErrors.join('; '));\n        // 尝试修复而非跳过\n        if (!score.scores) continue;\n      }\n      \n      // 强制使用固定权重重新计算 overall_score\n      for (const dim of Object.keys(WEIGHTS)) {\n        if (score.scores[dim]) {\n          score.scores[dim].weight = WEIGHTS[dim];\n        }\n      }\n      const calculatedScore = calculateOverallScore(score.scores);\n      score.overall_score = calculatedScore;\n      \n      // 查找对应的元数据\n      let jobMeta = null;\n      for (const batch of batchMeta) {\n        if (batch.json.jobs_meta) {\n          const found = batch.json.jobs_meta.find(m => String(m.job_id) === String(score.job_id));\n          if (found) {\n            jobMeta = found;\n            break;\n          }\n        }\n      }\n      \n      // 合并评分与元数据\n      allResults.push({\n        json: {\n          job_id: score.job_id,\n          title: jobMeta?.title || 'Unknown',\n          company: jobMeta?.company || 'Unknown',\n          location: jobMeta?.location || 'Australia',\n          posted_date: jobMeta?.posted_date || new Date().toISOString(),\n          salary_range: jobMeta?.salary_range || 'Not specified',\n          linkedin_url: jobMeta?.linkedin_url || '#',\n          description_snippet: jobMeta?.description_snippet || '',\n          overall_score: score.overall_score,\n          recommended_action: score.recommended_action || 'low_priority',\n          scores: score.scores,\n          match_highlights: (score.match_highlights || []).slice(0, 3),\n          red_flags: score.red_flags || []\n        }\n      });\n    }\n    \n  } catch (error) {\n    console.log('处理批次时出错:', error.message);\n    continue; // 跳过当前批次，继续处理其他\n  }\n}\n\nif (allResults.length === 0) {\n  return [{ json: { _no_scored_jobs: true } }];\n}\n\nreturn allResults;\n"
+      },
+      "id": "node-12-parse-merge",
+      "name": "Parse and Merge Scores",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3080, 200],
+      "notes": "Stage 5-6: 解析 AI JSON + Schema 验证 + 合并元数据"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Stage 7: 按 overall_score 降序排列，取 Top N\n// 输入: 合并后的评分+元数据对象\n// 输出: 排序后的 Top N 职位\n\nconst items = $input.all();\nconst config = $('Config').first().json;\nconst topN = config.TOP_N_JOBS || 15;\nconst minScore = config.MIN_OVERALL_SCORE || 0;\n\n// 过滤无效项和低分项\nconst validJobs = items\n  .filter(item => !item.json._no_scored_jobs && item.json.overall_score !== undefined)\n  .filter(item => item.json.overall_score >= minScore);\n\nif (validJobs.length === 0) {\n  return [{ json: { _no_jobs: true, config: config } }];\n}\n\n// 降序排列\nvalidJobs.sort((a, b) => b.json.overall_score - a.json.overall_score);\n\n// 取前 N 个\nconst topJobs = validJobs.slice(0, topN);\n\nreturn topJobs;\n"
+      },
+      "id": "node-14-rank-slice",
+      "name": "Rank and Top N",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3300, 200],
+      "notes": "Stage 7: 按总分降序排列，取 Top 15"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Stage 8: 生成精美 HTML 邮件报告\n// 输入: 排序后的 Top N 职位\n// 输出: { subject: string, html: string }\n\nconst items = $input.all();\nconst config = $('Config').first().json;\nconst runDate = config.RUN_DATE || new Date().toISOString().split('T')[0];\n\n// 检查是否无职位\nif (items.length === 1 && (items[0].json._no_jobs || items[0].json._no_scored_jobs)) {\n  const emptyHtml = `\n  <html><body style=\"font-family:Arial,sans-serif;background:#f5f5f5;padding:20px;\">\n    <table width=\"600\" cellpadding=\"0\" cellspacing=\"0\" align=\"center\" style=\"background:#fff;border-radius:8px;overflow:hidden;\">\n      <tr><td style=\"background:#1a1a2e;color:#fff;padding:30px;text-align:center;\">\n        <h1 style=\"margin:0;font-size:24px;\">📋 Daily Job Report</h1>\n        <p style=\"margin:5px 0 0;opacity:0.8;\">${runDate}</p>\n      </td></tr>\n      <tr><td style=\"padding:40px;text-align:center;\">\n        <p style=\"font-size:18px;color:#666;\">No new matching jobs found today.</p>\n        <p style=\"color:#999;\">The agent will search again tomorrow at 07:30 AEST.</p>\n      </td></tr>\n    </table>\n  </body></html>`;\n  \n  return [{ json: { \n    subject: `📋 Daily Job Report | ${runDate} | No new matches`, \n    html: emptyHtml \n  }}];\n}\n\nconst jobs = items.map(i => i.json);\nconst totalJobs = jobs.length;\n\n// 颜色工具函数\nfunction getScoreColor(score) {\n  if (score >= 90) return '#22c55e';  // 绿色\n  if (score >= 70) return '#f59e0b';  // 黄色\n  return '#ef4444';                    // 红色\n}\n\nfunction getActionBadge(action) {\n  switch(action) {\n    case 'apply_now': return '<span style=\"display:inline-block;background:#22c55e;color:#fff;padding:4px 12px;border-radius:12px;font-size:12px;font-weight:bold;\">🚀 APPLY NOW</span>';\n    case 'worth_applying': return '<span style=\"display:inline-block;background:#3b82f6;color:#fff;padding:4px 12px;border-radius:12px;font-size:12px;font-weight:bold;\">👍 WORTH APPLYING</span>';\n    default: return '<span style=\"display:inline-block;background:#9ca3af;color:#fff;padding:4px 12px;border-radius:12px;font-size:12px;font-weight:bold;\">⏸️ LOW PRIORITY</span>';\n  }\n}\n\n// 生成 emoji 进度条\nfunction emojiBar(score) {\n  const filled = Math.round(score / 10);\n  const empty = 10 - filled;\n  const color = score >= 80 ? '🟢' : score >= 60 ? '🟡' : '🔴';\n  return color.repeat(filled) + '⚪'.repeat(empty) + ` ${score}`;\n}\n\n// 构建职位卡片 HTML\nfunction buildJobCard(job, rank) {\n  const scoreColor = getScoreColor(job.overall_score);\n  const progressWidth = Math.min(job.overall_score, 100);\n  \n  const highlightsHtml = (job.match_highlights || []).map(h => \n    `<tr><td style=\"padding:2px 0;font-size:13px;color:#059669;\">✅ ${h}</td></tr>`\n  ).join('');\n  \n  const redFlagsHtml = (job.red_flags || []).length > 0 \n    ? job.red_flags.map(f => \n        `<tr><td style=\"padding:2px 0;font-size:13px;color:#dc2626;\">⚠️ ${f}</td></tr>`\n      ).join('')\n    : '';\n  \n  const scores = job.scores || {};\n  \n  return `\n    <tr><td style=\"padding:8px 20px;\">\n      <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#fff;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;margin-bottom:4px;\">\n        <!-- 卡片头部 -->\n        <tr><td style=\"padding:16px 20px;border-bottom:1px solid #f3f4f6;\">\n          <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\">\n            <tr>\n              <td style=\"vertical-align:top;\">\n                <span style=\"font-size:12px;color:#9ca3af;\">#${rank}</span>\n                <h3 style=\"margin:2px 0 4px;font-size:16px;color:#1f2937;\">${job.title}</h3>\n                <p style=\"margin:0;font-size:14px;color:#6b7280;font-weight:600;\">${job.company}</p>\n                <p style=\"margin:4px 0 0;font-size:12px;color:#9ca3af;\">📍 ${job.location} · 🕐 ${job.posted_date?.split('T')[0] || 'Recent'}</p>\n                <p style=\"margin:2px 0 0;font-size:12px;color:#9ca3af;\">💰 ${job.salary_range}</p>\n              </td>\n              <td width=\"120\" style=\"text-align:center;vertical-align:top;\">\n                <div style=\"font-size:32px;font-weight:bold;color:${scoreColor};\">${job.overall_score}</div>\n                <div style=\"font-size:11px;color:#9ca3af;\">MATCH SCORE</div>\n                <div style=\"margin-top:6px;\">${getActionBadge(job.recommended_action)}</div>\n              </td>\n            </tr>\n          </table>\n        </td></tr>\n        \n        <!-- 分数进度条 -->\n        <tr><td style=\"padding:12px 20px;\">\n          <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#f3f4f6;border-radius:4px;overflow:hidden;\">\n            <tr><td>\n              <div style=\"height:8px;width:${progressWidth}%;background:${scoreColor};border-radius:4px;\"></div>\n            </td></tr>\n          </table>\n        </td></tr>\n        \n        <!-- 五维度评分 -->\n        <tr><td style=\"padding:4px 20px 12px;\">\n          <table width=\"100%\" cellpadding=\"2\" cellspacing=\"0\" style=\"font-size:12px;color:#4b5563;\">\n            <tr><td width=\"200\">🔧 Technical Skills</td><td>${emojiBar(scores.technical_skills_match?.score || 0)}</td></tr>\n            <tr><td>📊 Experience Level</td><td>${emojiBar(scores.experience_level_match?.score || 0)}</td></tr>\n            <tr><td>🗣️ Language</td><td>${emojiBar(scores.language_requirements?.score || 0)}</td></tr>\n            <tr><td>🏢 Industry Fit</td><td>${emojiBar(scores.industry_domain_fit?.score || 0)}</td></tr>\n            <tr><td>📍 Location/Visa</td><td>${emojiBar(scores.location_visa_compatibility?.score || 0)}</td></tr>\n          </table>\n        </td></tr>\n        \n        <!-- 亮点和红旗 -->\n        <tr><td style=\"padding:4px 20px 12px;\">\n          <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\">\n            ${highlightsHtml}\n            ${redFlagsHtml}\n          </table>\n        </td></tr>\n        \n        <!-- 查看按钮 -->\n        <tr><td style=\"padding:8px 20px 16px;text-align:center;\">\n          <a href=\"${job.linkedin_url}\" target=\"_blank\" style=\"display:inline-block;background:#0077b5;color:#fff;padding:10px 28px;border-radius:6px;text-decoration:none;font-size:14px;font-weight:bold;\">🔗 View on LinkedIn</a>\n        </td></tr>\n      </table>\n    </td></tr>`;\n}\n\n// 汇总统计\nconst applyNowCount = jobs.filter(j => j.recommended_action === 'apply_now').length;\nconst avgScore = (jobs.reduce((s, j) => s + j.overall_score, 0) / jobs.length).toFixed(1);\n\n// 主 HTML 模板\nconst html = `\n<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"utf-8\">\n  <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n  <meta name=\"color-scheme\" content=\"light dark\">\n  <meta name=\"supported-color-schemes\" content=\"light dark\">\n  <style>\n    @media (prefers-color-scheme: dark) {\n      .email-body { background-color: #1a1a2e !important; }\n      .card-bg { background-color: #16213e !important; border-color: #2a2a4e !important; }\n      .text-dark { color: #e5e7eb !important; }\n      .text-muted { color: #9ca3af !important; }\n    }\n  </style>\n</head>\n<body style=\"margin:0;padding:0;font-family:Arial,Helvetica,sans-serif;background:#f3f4f6;\" class=\"email-body\">\n  <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\">\n    <tr><td align=\"center\" style=\"padding:20px;\">\n      <table width=\"640\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"max-width:640px;width:100%;\">\n        \n        <!-- Banner 头部 -->\n        <tr><td style=\"background:linear-gradient(135deg,#1a1a2e,#16213e);background-color:#1a1a2e;color:#ffffff;padding:30px;border-radius:12px 12px 0 0;text-align:center;\">\n          <h1 style=\"margin:0;font-size:26px;font-weight:bold;\">🎯 Daily Job Report</h1>\n          <p style=\"margin:8px 0 0;font-size:14px;opacity:0.85;\">${runDate} | Australia Job Market</p>\n          <table width=\"100%\" cellpadding=\"8\" cellspacing=\"0\" style=\"margin-top:16px;\">\n            <tr>\n              <td width=\"33%\" style=\"text-align:center;\">\n                <div style=\"font-size:28px;font-weight:bold;\">${totalJobs}</div>\n                <div style=\"font-size:11px;opacity:0.7;\">MATCHED JOBS</div>\n              </td>\n              <td width=\"33%\" style=\"text-align:center;\">\n                <div style=\"font-size:28px;font-weight:bold;\">${applyNowCount}</div>\n                <div style=\"font-size:11px;opacity:0.7;\">APPLY NOW</div>\n              </td>\n              <td width=\"33%\" style=\"text-align:center;\">\n                <div style=\"font-size:28px;font-weight:bold;\">${avgScore}</div>\n                <div style=\"font-size:11px;opacity:0.7;\">AVG SCORE</div>\n              </td>\n            </tr>\n          </table>\n        </td></tr>\n        \n        <!-- 职位卡片区域 -->\n        <tr><td style=\"background:#f9fafb;padding:8px 0;\">\n          <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\">\n            ${jobs.map((job, i) => buildJobCard(job, i + 1)).join('')}\n          </table>\n        </td></tr>\n        \n        <!-- 底部 -->\n        <tr><td style=\"background:#f9fafb;padding:20px 30px;border-top:1px solid #e5e7eb;border-radius:0 0 12px 12px;text-align:center;\">\n          <p style=\"margin:0;font-size:11px;color:#9ca3af;\">This report was automatically generated by AI Job Agent at ${new Date().toISOString()}</p>\n          <p style=\"margin:4px 0 0;font-size:11px;color:#9ca3af;\">Scores are AI-generated estimates. Always review job requirements carefully before applying.</p>\n          <p style=\"margin:4px 0 0;font-size:11px;color:#9ca3af;\">🤖 Powered by Claude AI + n8n Automation</p>\n        </td></tr>\n        \n      </table>\n    </td></tr>\n  </table>\n</body>\n</html>`;\n\nconst subject = `🎯 Daily Job Report | ${runDate} | Found ${totalJobs} matching jobs`;\n\nreturn [{ json: { subject, html } }];\n"
+      },
+      "id": "node-15-build-email",
+      "name": "Build Email HTML",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3520, 200],
+      "notes": "Stage 8: 生成精美 HTML 邮件报告"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Config').first().json.RECIPIENT_EMAIL }}",
+        "subject": "={{ $json.subject }}",
+        "emailType": "html",
+        "message": "={{ $json.html }}",
+        "options": {}
+      },
+      "id": "node-16-send-gmail",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [3740, 200],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gmail-credential-id",
+          "name": "Gmail OAuth2"
+        }
+      },
+      "notes": "Stage 8: 通过 Gmail 发送报告邮件"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// 无职位时发送空通知邮件\nconst config = $('Config').first().json;\nconst runDate = config.RUN_DATE || new Date().toISOString().split('T')[0];\n\nconst html = `\n<html><body style=\"font-family:Arial,sans-serif;background:#f5f5f5;padding:20px;\">\n  <table width=\"600\" cellpadding=\"0\" cellspacing=\"0\" align=\"center\" style=\"background:#fff;border-radius:8px;overflow:hidden;\">\n    <tr><td style=\"background:#1a1a2e;color:#fff;padding:30px;text-align:center;\">\n      <h1 style=\"margin:0;font-size:24px;\">📋 Daily Job Report</h1>\n      <p style=\"margin:5px 0 0;opacity:0.8;\">${runDate}</p>\n    </td></tr>\n    <tr><td style=\"padding:40px;text-align:center;\">\n      <p style=\"font-size:48px;margin:0;\">🔍</p>\n      <h2 style=\"color:#374151;\">No New Matching Jobs Today</h2>\n      <p style=\"color:#6b7280;line-height:1.6;\">The automated agent searched for positions matching your profile in the Australian job market over the past 24 hours but found no new matches.</p>\n      <p style=\"color:#9ca3af;font-size:13px;margin-top:20px;\">Search keywords: ${config.LINKEDIN_SEARCH_KEYWORDS}</p>\n      <p style=\"color:#9ca3af;font-size:13px;\">Location: ${config.LINKEDIN_LOCATION}</p>\n      <hr style=\"border:none;border-top:1px solid #e5e7eb;margin:20px 0;\">\n      <p style=\"color:#9ca3af;font-size:12px;\">The agent will search again tomorrow at 07:30 AEST.</p>\n      <p style=\"color:#9ca3af;font-size:11px;\">🤖 Powered by AI Job Agent</p>\n    </td></tr>\n  </table>\n</body></html>`;\n\nreturn [{ json: {\n  subject: `📋 Daily Job Report | ${runDate} | No new matches`,\n  html: html\n}}];\n"
+      },
+      "id": "node-17-empty-notification",
+      "name": "Build Empty Notification",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2420, 480],
+      "notes": "无职位时构建空通知邮件"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Config').first().json.RECIPIENT_EMAIL }}",
+        "subject": "={{ $json.subject }}",
+        "emailType": "html",
+        "message": "={{ $json.html }}",
+        "options": {}
+      },
+      "id": "node-18-send-empty",
+      "name": "Send Empty Notification",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [2640, 480],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gmail-credential-id",
+          "name": "Gmail OAuth2"
+        }
+      },
+      "notes": "发送无职位通知邮件"
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "RetrieveCV",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RetrieveCV": {
+      "main": [
+        [
+          {
+            "node": "Extract from File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File": {
+      "main": [
+        [
+          {
+            "node": "MapResume",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MapResume": {
+      "main": [
+        [
+          {
+            "node": "LinkedIn",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LinkedIn": {
+      "main": [
+        [
+          {
+            "node": "Fetch Dataset",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Dataset": {
+      "main": [
+        [
+          {
+            "node": "NormalizeData",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "NormalizeData": {
+      "main": [
+        [
+          {
+            "node": "Filter and Deduplicate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter and Deduplicate": {
+      "main": [
+        [
+          {
+            "node": "Check Empty",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Empty": {
+      "main": [
+        [
+          {
+            "node": "IF Has Jobs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Has Jobs": {
+      "main": [
+        [
+          {
+            "node": "Prepare AI Input",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Empty Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare AI Input": {
+      "main": [
+        [
+          {
+            "node": "SplitInBatches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SplitInBatches": {
+      "main": [
+        [
+          {
+            "node": "Score the Job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Score the Job": {
+      "main": [
+        [
+          {
+            "node": "Parse and Merge Scores",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse and Merge Scores": {
+      "main": [
+        [
+          {
+            "node": "Rank and Top N",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rank and Top N": {
+      "main": [
+        [
+          {
+            "node": "Build Email HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Email HTML": {
+      "main": [
+        [
+          {
+            "node": "Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Empty Notification": {
+      "main": [
+        [
+          {
+            "node": "Send Empty Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "",
+    "timezone": "Australia/Sydney"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "job-agent",
+      "id": "tag-job-agent"
+    },
+    {
+      "name": "daily-automation",
+      "id": "tag-daily"
+    }
+  ],
+  "pinData": {},
+  "versionId": "1.0.0",
+  "meta": {
+    "instanceId": "",
+    "templateCredsSetupCompleted": false
+  }
+}
