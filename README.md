@@ -110,7 +110,7 @@ Before starting deployment, ensure you have accounts with the following services
 | 1 | **n8n** | Workflow automation engine | ✅ Self-hosted is free; Cloud from $20/mo | [n8n.io](https://n8n.io) |
 | 2 | **Apify** | LinkedIn job scraping via `bebity/linkedin-jobs-scraper` | ✅ $5/mo free credits | [apify.com](https://apify.com) |
 | 3 | **Google Cloud** | Google Drive API (CV retrieval) + Gmail API (email sending) | ✅ Free tier covers usage | [console.cloud.google.com](https://console.cloud.google.com) |
-| 4 | **Anthropic** | Claude AI API for job-CV scoring | ❌ Pay-per-use (~$0.15/run) | [console.anthropic.com](https://console.anthropic.com) |
+| 4 | **Anthropic** | Claude AI API for job-CV scoring | ❌ Pay-per-use (~$0.15/run) | [platform.claude.com](https://platform.claude.com/) |
 
 ---
 
@@ -199,7 +199,7 @@ After starting, access the n8n editor at `http://localhost:5678` (or your cloud 
 
 ### Step 4: Get Anthropic Claude API Key
 
-1. Sign up at [console.anthropic.com](https://console.anthropic.com)
+1. Sign up at [platform.claude.com/](https://platform.claude.com/)
 2. Navigate to **Settings → API Keys**
 3. Click **Create Key**
    - Name: `n8n-job-agent`
