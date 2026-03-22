@@ -1,6 +1,6 @@
-# 🎯 Daily Job Hunting Agent — Australia
-
 <div align="center">
+
+# 🎯 Daily Job Hunting Agent — Australia
 
 **[English](./README.md) · [中文](./README_CN.md)**
 
@@ -9,15 +9,7 @@
 <div align="center">
 
 <!-- Tech Stack Badges -->
-![n8n](https://img.shields.io/badge/n8n-Workflow_Automation-EA4B71?style=for-the-badge&logo=n8n&logoColor=white)
-![Claude AI](https://img.shields.io/badge/Claude_AI-Anthropic-D97757?style=for-the-badge&logo=anthropic&logoColor=white)
-![Apify](https://img.shields.io/badge/Apify-LinkedIn_Scraping-00B7EC?style=for-the-badge&logo=apify&logoColor=white)
-![Google Drive](https://img.shields.io/badge/Google_Drive-CV_Storage-4285F4?style=for-the-badge&logo=googledrive&logoColor=white)
-![Gmail](https://img.shields.io/badge/Gmail-SMTP_Delivery-EA4335?style=for-the-badge&logo=gmail&logoColor=white)
-
-![Schedule](https://img.shields.io/badge/Schedule-Weekdays_07%3A30_AEST-2ECC71?style=for-the-badge&logo=clockify&logoColor=white)
-![Pipeline](https://img.shields.io/badge/Pipeline-8_Stages_%7C_16_Nodes-8B5CF6?style=for-the-badge&logo=githubactions&logoColor=white)
-![License](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)
+[![n8n](https://img.shields.io/badge/n8n-Workflow_Automation-EA4B71?style=for-the-badge&logo=n8n&logoColor=white) [![Claude AI](https://img.shields.io/badge/Claude_AI-Anthropic-D97757?style=for-the-badge&logo=anthropic&logoColor=white) [![Apify](https://img.shields.io/badge/Apify-LinkedIn_Scraping-00B7EC?style=for-the-badge&logo=apify&logoColor=white) [![Google Drive](https://img.shields.io/badge/Google_Drive-CV_Storage-4285F4?style=for-the-badge&logo=googledrive&logoColor=white) [![Gmail](https://img.shields.io/badge/Gmail-SMTP_Delivery-EA4335?style=for-the-badge&logo=gmail&logoColor=white) [![Schedule](https://img.shields.io/badge/Schedule-Weekdays_07%3A30_AEST-2ECC71?style=for-the-badge&logo=clockify&logoColor=white)
 
 </div>
 
@@ -53,9 +45,7 @@ The workflow follows an 8-stage, 16-node pipeline that runs every weekday at 07:
 
 <div align="center">
 
-<img src="assets/drawio.png" alt="System Architecture — 8-Stage Pipeline" width="780"/>
-
-*8-Stage Pipeline · 16 Nodes · Weekdays 07:30 AEST*
+<img src="assets/system-architecture.png" alt="System Architecture" width="780"/>
 
 </div>
 
@@ -573,26 +563,6 @@ In the **Score the Job** node, change the `model` field in the request body:
 
 ---
 
-## License
+## 📞 Support 
 
-MIT License
-
-Copyright (c) 2026
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+For issues or recommendations, feel free to email cunliangyu19@gmail.com or create an issue in the project repository.
