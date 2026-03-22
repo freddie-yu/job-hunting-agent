@@ -31,7 +31,7 @@ An n8n workflow that automatically searches LinkedIn for new job postings every 
 - [FAQ & Troubleshooting](#faq--troubleshooting)
 - [Customization Guide](#customization-guide)
 - [Disclaimer](#disclaimer)
-- [📞 Support](#support)
+- [Support](#support)
 
 ---
 
