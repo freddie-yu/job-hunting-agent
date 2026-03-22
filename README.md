@@ -565,4 +565,4 @@ In the **Score the Job** node, change the `model` field in the request body:
 
 ## 📞 Support 
 
-For issues or recommendations, feel free to email cunliangyu19@gmail.com or create an issue in the project repository.
+For issues or recommendations, email cunliangyu19@gmail.com or create an issue in the project repo.
