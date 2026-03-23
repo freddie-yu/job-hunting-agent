@@ -9,11 +9,11 @@
 <div align="center">
 
 <!-- Tech Stack Badges -->
-![n8n](https://img.shields.io/badge/n8n-工作流自动化-EA4B71?style=for-the-badge&logo=n8n&logoColor=white)
-![Claude AI](https://img.shields.io/badge/Claude_AI-Anthropic-D97757?style=for-the-badge&logo=anthropic&logoColor=white)
-![Apify](https://img.shields.io/badge/Apify-LinkedIn_抓取-00B7EC?style=for-the-badge&logo=apify&logoColor=white)
-![Google Drive](https://img.shields.io/badge/Google_Drive-简历存储-4285F4?style=for-the-badge&logo=googledrive&logoColor=white)
-![Gmail](https://img.shields.io/badge/Gmail-SMTP_发送-EA4335?style=for-the-badge&logo=gmail&logoColor=white)
+![n8n](https://img.shields.io/badge/n8n-工作流自动化-EA4B71?style=flat&logo=n8n&logoColor=white)
+![Claude AI](https://img.shields.io/badge/Claude%20AI-Anthropic-D97757?style=flat&logo=anthropic&logoColor=white)
+![Apify](https://img.shields.io/badge/Apify-LinkedIn%20抓取-00B7EC?style=flat&logo=apify&logoColor=white)
+![Google Drive](https://img.shields.io/badge/Google%20Drive-简历存储-4285F4?style=flat&logo=googledrive&logoColor=white)
+![Gmail](https://img.shields.io/badge/Gmail-SMTP%20发送-EA4335?style=flat&logo=gmail&logoColor=white)
 
 </div>
 
@@ -35,7 +35,7 @@
 - [常见问题与故障排查](#常见问题与故障排查)
 - [自定义指南](#自定义指南)
 - [免责声明](#免责声明)
-- [支持 & 联系](#支持-联系)
+- [📞 支持 & 联系](#-支持--联系)
 
 ---
 
